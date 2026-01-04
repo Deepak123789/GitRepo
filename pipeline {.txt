@@ -1,0 +1,87 @@
+pipeline {
+    agent any
+
+    options {
+        timestamps()
+        timeout(time: 30, unit: 'MINUTES')
+    }
+
+    environment {
+        COMPOSE_FILE = 'docker-compose.yml'
+        API_HEALTH_URL = 'http://localhost:5000/health'
+    }
+
+    stages {
+
+        stage('Checkout Code') {
+            steps {
+                echo '📥 Checking out source code'
+                checkout scm
+            }
+        }
+
+        stage('Restore & Build API') {
+            steps {
+                echo '🔧 Building .NET API'
+                dir('RoommateSplit.Api') {
+                    sh 'dotnet restore'
+                    sh 'dotnet build -c Release --no-restore'
+                }
+            }
+        }
+
+        stage('Run Unit Tests') {
+            steps {
+                echo '🧪 Running Unit Tests'
+                script {
+                    if (fileExists('tests')) {
+                        dir('tests') {
+                            sh 'dotnet test --no-build'
+                        }
+                    } else {
+                        echo '⚠️ No tests folder found – skipping tests'
+                    }
+                }
+            }
+        }
+
+        stage('Build Docker Images') {
+            steps {
+                echo '🐳 Building Docker images'
+                sh 'docker-compose build'
+            }
+        }
+
+        stage('Deploy Containers') {
+            steps {
+                echo '🚀 Deploying application using Docker Compose'
+                sh '''
+                    docker-compose down
+                    docker-compose up -d
+                '''
+            }
+        }
+
+        stage('API Health Check') {
+            steps {
+                echo '❤️ Checking API health'
+                sh '''
+                    sleep 20
+                    curl -f http://localhost:5000/health
+                '''
+            }
+        }
+    }
+
+    post {
+        success {
+            echo '✅ CI/CD Pipeline completed successfully'
+        }
+        failure {
+            echo '❌ CI/CD Pipeline failed'
+        }
+        always {
+            echo '🧹 Pipeline finished'
+        }
+    }
+}
